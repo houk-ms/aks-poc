@@ -1,57 +1,67 @@
 package main
 
+import (
+	"os"
+	"strings"
+)
+
+type DeployParams struct {
+	KubeConfigPath         string
+	ConnectionName         string
+	KeyvaultName           string
+	KeyvaultTenantId       string
+	UserAssignedIdentityID string
+	KeyvaultSecretPairs    map[string]string
+	ConfigMapPairs         map[string]string
+	SecretPairs            map[string]string
+}
+
 func main() {
-	kubeConfigPath := "C:/Users/houk/Desktop/msws/akspoc/config"
-
-	// Deploy infrastucture
-	KubectlApply(kubeConfigPath, CertManagerYaml)
-	KubectlApply(kubeConfigPath, PodPresetYaml)
-
-	// Deploy CRD
-	// create a nameapce
-	client := GetClient(kubeConfigPath)
-	nsParams := &NamespaceParams{
-		Name: "serviceconnector",
+	dParams := DeployParams{
+		KubeConfigPath:         "",
+		KeyvaultName:           "",
+		KeyvaultTenantId:       "",
+		UserAssignedIdentityID: "",
+		KeyvaultSecretPairs:    map[string]string{},
+		ConfigMapPairs:         map[string]string{},
+		SecretPairs:            map[string]string{},
 	}
-	CreateNamespace(client, nsParams)
 
-	// create a secret provider
-	dclient := GetDynamiClient("C:/Users/houk/Desktop/msws/akspoc/config")
-	spParams := &SecretProviderParams{
-		Name:                "serviceconnector-secretprovider",
-		Namespace:           "serviceconnector",
-		K8sSecretName:       "serviceconnector-secret",
-		KeyvaultName:        "houk-kv",                              // external param
-		KeyvaultTenantId:    "72f988bf-86f1-41af-91ab-2d7cd011db47", // external param
-		KeyvaultSecretNames: []string{"houk-secret"},
+	argName := "unknow"
+	for _, arg := range os.Args {
+		if arg[:2] == "--" {
+			argName = arg[2:]
+			continue
+		}
+		switch argName {
+		case "kube-config":
+			dParams.KubeConfigPath = arg
+		case "connection":
+			dParams.ConnectionName = arg
+		case "config-map":
+			items := strings.Split(arg, "=")
+			dParams.ConfigMapPairs[items[0]] = items[1]
+		case "secret":
+			items := strings.Split(arg, "=")
+			dParams.SecretPairs[items[0]] = items[1]
+		case "kv-name":
+			dParams.KeyvaultName = arg
+		case "kv-tenantid":
+			dParams.KeyvaultTenantId = arg
+		case "umi-clientid":
+			dParams.UserAssignedIdentityID = arg
+		case "kv-secret":
+			items := strings.Split(arg, "=")
+			dParams.KeyvaultSecretPairs[items[0]] = items[1]
+		case "unkown":
+			panic("Args parsing error!")
+		}
 	}
-	CreateSecretProvider(dclient, spParams)
 
-	// create a pod to mouny secrets
-	pparams := &PodParams{
-		Name:               "serviceconnector-pod",
-		Namespace:          "default",
-		ContainerName:      "serviceconnector-container",
-		SecretProviderName: "serviceconnector-secretprovider",
+	useKeyVault := false
+	if len(dParams.KeyvaultSecretPairs) > 0 {
+		useKeyVault = true
 	}
-	CreatePod(client, pparams)
 
-	// create a config map
-	params := &ConfigMapParams{
-		Name:      "serviceconnector-configmap",
-		Namespace: "default",
-		Data: map[string]string{
-			"houk-config": "houk-value", // external param
-		},
-	}
-	CreateConfigMap(client, params)
-
-	// create a pod preset
-	presetParams := &PodPresetParams{
-		Name:          "serviceconnector-podpreset",
-		Namespace:     "serviceconnector",
-		ConfigMapRefs: []string{"houk-config"}, // external param
-		SecretRefs:    []string{"houk-secret"}, // external param
-	}
-	CreatePodPreset(dclient, presetParams)
+	DeploySimple(useKeyVault, dParams)
 }

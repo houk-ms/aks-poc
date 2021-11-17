@@ -1,0 +1,25 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: serviceconnector-mount-pod
+spec:
+  containers:
+  - name: busybox
+    image: k8s.gcr.io/e2e-test-images/busybox:1.29
+    command:
+      - "/bin/sleep"
+      - "10000"
+    volumeMounts:
+    - name: serviceconnector-secretvolume
+      mountPath: "/mnt/secrets-store"
+      readOnly: true
+    - envFrom:
+      - secretRef:
+          name: serviceconnector-secretprovider
+  volumes:
+  - name: serviceconnector-secretvolume
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: "serviceconnector-secretprovider"

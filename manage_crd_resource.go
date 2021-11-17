@@ -35,8 +35,10 @@ func CreateCRDResource(client dynamic.Interface, gvr schema.GroupVersionResource
 	}
 
 	// create or update
-	_, err := client.Resource(gvr).Namespace(namespace).Get(context.TODO(), obj.GetName(), metav1.GetOptions{})
+	utd, err := client.Resource(gvr).Namespace(namespace).Get(context.TODO(), obj.GetName(), metav1.GetOptions{})
 	if err == nil {
+		// resource version needs to be provided for updation
+		obj.SetResourceVersion(utd.GetResourceVersion())
 		_, err = client.Resource(gvr).Namespace(namespace).Update(context.TODO(), obj, metav1.UpdateOptions{})
 	} else {
 		_, err = client.Resource(gvr).Namespace(namespace).Create(context.TODO(), obj, metav1.CreateOptions{})

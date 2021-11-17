@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	appsv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -10,9 +11,9 @@ import (
 )
 
 type ConfigMapParams struct {
-	Name      string
-	Namespace string
-	Data      map[string]string
+	Name           string
+	Namespace      string
+	ConfigMapPairs map[string]string
 }
 
 type NamespaceParams struct {
@@ -24,6 +25,13 @@ type PodParams struct {
 	Namespace          string
 	ContainerName      string
 	SecretProviderName string
+	K8sSecretName      string
+}
+
+type SecretParams struct {
+	Name        string
+	Namespace   string
+	SecretPairs map[string]string
 }
 
 func GetClient(kubeConfigPath string) *kubernetes.Clientset {
@@ -48,7 +56,7 @@ func CreateConfigMap(client *kubernetes.Clientset, params *ConfigMapParams) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: params.Name,
 		},
-		Data: params.Data,
+		Data: params.ConfigMapPairs,
 	}
 
 	// create or update
@@ -62,6 +70,7 @@ func CreateConfigMap(client *kubernetes.Clientset, params *ConfigMapParams) {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("configmap/%s created\n", params.Name)
 }
 
 func CreateNamespace(client *kubernetes.Clientset, params *NamespaceParams) {
@@ -83,6 +92,7 @@ func CreateNamespace(client *kubernetes.Clientset, params *NamespaceParams) {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("namespace/%s created\n", params.Name)
 }
 
 func CreatePod(client *kubernetes.Clientset, params *PodParams) {
@@ -100,26 +110,31 @@ func CreatePod(client *kubernetes.Clientset, params *PodParams) {
 		Spec: appsv1.PodSpec{
 			Containers: []appsv1.Container{
 				{
-					Name:  "ServiceConnectorContainer",
+					Name:  "serviceconnector-container",
 					Image: "k8s.gcr.io/e2e-test-images/busybox:1.29",
+					Command: []string{
+						"/bin/sleep", "10000",
+					},
 					VolumeMounts: []appsv1.VolumeMount{
 						{
-							Name:      "ServiceConnectorSecretStoreVolume",
+							Name:      "serviceconnector-secretstorevolume",
 							MountPath: "/mnt/secret-store",
 							ReadOnly:  true,
 						},
 					},
-					EnvFrom: []appsv1.EnvFromSource{
-						{
-							ConfigMapRef: &appsv1.ConfigMapEnvSource{},
-							SecretRef:    &appsv1.SecretEnvSource{},
+					EnvFrom: []appsv1.EnvFromSource{{
+						SecretRef: &appsv1.SecretEnvSource{
+							LocalObjectReference: appsv1.LocalObjectReference{
+								Name: params.K8sSecretName,
+							},
 						},
+					},
 					},
 				},
 			},
 			Volumes: []appsv1.Volume{
 				{
-					Name: "ServiceConnectorSecretStoreVolume",
+					Name: "serviceconnector-secretstorevolume",
 					VolumeSource: appsv1.VolumeSource{
 						CSI: &appsv1.CSIVolumeSource{
 							Driver:   "secrets-store.csi.k8s.io",
@@ -137,12 +152,45 @@ func CreatePod(client *kubernetes.Clientset, params *PodParams) {
 	// create or update
 	_, err := podClient.Get(context.TODO(), params.Name, metav1.GetOptions{})
 	if err == nil {
-		_, err = podClient.Update(context.TODO(), pod, metav1.UpdateOptions{})
+		_ = podClient.Delete(context.TODO(), params.Name, metav1.DeleteOptions{})
+	}
+	_, err = podClient.Create(context.TODO(), pod, metav1.CreateOptions{})
+
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("pod/%s created\n", params.Name)
+}
+
+func CreateSecret(client *kubernetes.Clientset, params *SecretParams) {
+	secretClient := client.CoreV1().Secrets(params.Namespace)
+	secret := &appsv1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      params.Name,
+			Namespace: params.Namespace,
+		},
+		Type: "Opaque",
+		Data: map[string][]byte{},
+	}
+
+	for key, val := range params.SecretPairs {
+		secret.Data[key] = []byte(val)
+	}
+
+	// create or update
+	_, err := secretClient.Get(context.TODO(), params.Name, metav1.GetOptions{})
+	if err == nil {
+		_, err = secretClient.Update(context.TODO(), secret, metav1.UpdateOptions{})
 	} else {
-		_, err = podClient.Create(context.TODO(), pod, metav1.CreateOptions{})
+		_, err = secretClient.Create(context.TODO(), secret, metav1.CreateOptions{})
 	}
 
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("secret/%s created\n", params.Name)
 }

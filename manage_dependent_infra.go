@@ -6,21 +6,23 @@ import (
 	"os/exec"
 )
 
-func KubectlApply(kubeConfigPath string, resourceConfig string) error {
+func KubectlApply(kubeConfigPath string, yamlPath string) error {
 	// get current directory
-	currentPath, err := os.Getwd()
-	if err != nil {
-		fmt.Println("Get current directory failed:" + err.Error())
-	}
+	// currentPath, err := os.Getwd()
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	// prepare kubectl arguments
-	args := "apply --kubeconfig " + kubeConfigPath + " -f - " + resourceConfig
+	args := []string{"apply", "--kubeconfig", kubeConfigPath, "-f", yamlPath}
 
 	// execute kubectl apply
-	cmd := exec.Command(currentPath+"/assets/kubectl", args)
-	err = cmd.Run()
+	cmd := exec.Command("C:/Users/houk/Desktop/msws/aks-poc/kubectl.exe", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
 	if err != nil {
-		fmt.Println("Execute command failed:" + err.Error())
+		panic(err)
 	}
 
 	fmt.Println("Execute Command finished.")

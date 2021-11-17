@@ -1,34 +1,30 @@
 package main
 
 import (
+	"fmt"
+
 	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 )
 
 type SecretProviderParams struct {
-	Name                string
-	Namespace           string
-	K8sSecretName       string
-	KeyvaultName        string
-	KeyvaultTenantId    string
-	KeyvaultSecretNames []string
-}
-
-type ParameterObjectArrayItem struct {
-	ObjectName string `yaml:"objectName"`
-	ObjectType string `yaml:"objectType"`
-}
-
-type SpecParametersObjects struct {
-	Array []ParameterObjectArrayItem `yaml:"array"`
+	Name                   string
+	Namespace              string
+	K8sSecretName          string
+	KeyvaultName           string
+	KeyvaultTenantId       string
+	UserAssignedIdentityID string
+	KeyvaultSecretPairs    map[string]string
 }
 
 type SpecParameters struct {
-	UsePodIdentity string                `yaml:"usePodIdentity"`
-	KeyvaultName   string                `yaml:"keyvaultName"`
-	Objects        SpecParametersObjects `yaml:"objects"`
-	TenantId       string                `yaml:"tenantId"`
+	UsePodIdentity         string `yaml:"usePodIdentity"`
+	UseVMManagedIdentity   string `yaml:"useVMManagedIdentity"`
+	UserAssignedIdentityID string `yaml:"userAssignedIdentityID"`
+	KeyvaultName           string `yaml:"keyvaultName"`
+	Objects                string `yaml:"objects"`
+	TenantId               string `yaml:"tenantId"`
 }
 
 type SecretObjectData struct {
@@ -58,7 +54,7 @@ type SecretProviderClass struct {
 func CreateSecretProvider(client dynamic.Interface, params *SecretProviderParams) {
 	secretProvider := SecretProviderClass{
 		APIVersion: "secrets-store.csi.x-k8s.io/v1alpha1",
-		Kind:       "PodPreset",
+		Kind:       "SecretProviderClass",
 		Metadata: map[string]string{
 			"name":      params.Name,
 			"namespace": params.Namespace,
@@ -73,28 +69,31 @@ func CreateSecretProvider(client dynamic.Interface, params *SecretProviderParams
 				},
 			},
 			Parameters: SpecParameters{
-				UsePodIdentity: "false",
-				KeyvaultName:   params.KeyvaultName,
-				TenantId:       params.KeyvaultTenantId,
-				Objects: SpecParametersObjects{
-					Array: []ParameterObjectArrayItem{},
-				},
+				UsePodIdentity:         "false",
+				UseVMManagedIdentity:   "true",
+				UserAssignedIdentityID: params.UserAssignedIdentityID,
+				KeyvaultName:           params.KeyvaultName,
+				TenantId:               params.KeyvaultTenantId,
+				Objects:                "",
 			},
 		},
 	}
 
-	for _, name := range params.KeyvaultSecretNames {
+	objectsValue := "array:\n"
+	for key, secret := range params.KeyvaultSecretPairs {
 		secretProvider.Spec.SecretObjects[0].Data = append(
 			secretProvider.Spec.SecretObjects[0].Data, SecretObjectData{
-				ObjectName: name,
-				Key:        name,
+				ObjectName: secret,
+				Key:        key,
 			})
-		secretProvider.Spec.Parameters.Objects.Array = append(
-			secretProvider.Spec.Parameters.Objects.Array, ParameterObjectArrayItem{
-				ObjectName: name,
-				ObjectType: "secret",
-			})
+
+		objectsValue += fmt.Sprintf(
+			`  - |
+    objectName: %s
+    objectType: secret
+`, secret)
 	}
+	secretProvider.Spec.Parameters.Objects = objectsValue
 
 	yamlData, err := yaml.Marshal(secretProvider)
 	if err != nil {
@@ -113,4 +112,5 @@ func CreateSecretProvider(client dynamic.Interface, params *SecretProviderParams
 		Kind:    "SecretProviderClass",
 	}
 	CreateCRDResource(client, gvrSecretProvider, gvkSecretProvider, params.Namespace, string(yamlData))
+	fmt.Printf("secretprovider/%s created\n", params.Name)
 }

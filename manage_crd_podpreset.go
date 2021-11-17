@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -84,4 +86,5 @@ func CreatePodPreset(client dynamic.Interface, params *PodPresetParams) {
 		Kind:    "PodPreset",
 	}
 	CreateCRDResource(client, gvrPodPreset, gvkPodPreset, params.Namespace, string(yamlData))
+	fmt.Printf("podpreset/%s created", params.Name)
 }
