@@ -19,6 +19,7 @@ type DeployParams struct {
 func main() {
 	dParams := DeployParams{
 		KubeConfigPath:         "",
+		ConnectionName:         "",
 		KeyvaultName:           "",
 		KeyvaultTenantId:       "",
 		UserAssignedIdentityID: "",
@@ -58,14 +59,18 @@ func main() {
 		}
 	}
 
+	connectKeyVault := false
 	useKeyVault := false
 	withTenant := true
-	if len(dParams.KeyvaultSecretPairs) > 0 {
+
+	if dParams.KeyvaultTenantId != "" && len(dParams.KeyvaultSecretPairs) == 0 {
+		connectKeyVault = true
+	} else if len(dParams.KeyvaultSecretPairs) > 0 {
 		useKeyVault = true
 	}
 	if dParams.KeyvaultTenantId == "" {
 		withTenant = false
 	}
 
-	DeploySimple(useKeyVault, withTenant, dParams)
+	DeploySimple(connectKeyVault, useKeyVault, withTenant, dParams)
 }

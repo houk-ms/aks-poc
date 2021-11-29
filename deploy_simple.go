@@ -2,19 +2,38 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
-func DeploySimple(useKeyVault bool, withTenant bool, params DeployParams) {
+func DeploySimple(connectKeyVault bool, useKeyVault bool, withTenant bool, params DeployParams) {
 	client := GetClient(params.KubeConfigPath)
 	dclient := GetDynamiClient(params.KubeConfigPath)
 
-	secretName := fmt.Sprintf("serviceconnector-%s-secret", strings.ToLower(params.ConnectionName))
-	podName := fmt.Sprintf("serviceconnector-%s-pod", strings.ToLower(params.ConnectionName))
-	configMapName := fmt.Sprintf("serviceconnector-%s-configmap", strings.ToLower(params.ConnectionName))
+	reg, _ := regexp.Compile("[^a-zA-Z0-9]+")
+	processedConnName := strings.ToLower(reg.ReplaceAllString(params.ConnectionName, ""))
+	secretName := fmt.Sprintf("serviceconnector-%s-secret", processedConnName)
+	podName := fmt.Sprintf("serviceconnector-%s-pod", processedConnName)
+	configMapName := fmt.Sprintf("serviceconnector-%s-configmap", processedConnName)
 
-	if useKeyVault {
-		secretProviderName := "serviceconnector-secretprovider"
+	if connectKeyVault {
+		processedKvName := strings.ToLower(reg.ReplaceAllString(params.KeyvaultName, ""))
+		secretProviderName := fmt.Sprintf("serviceconnector-%s-secretprovider", processedKvName)
+
+		// create a secret provider
+		spParams := &SecretProviderParams{
+			Name:                   secretProviderName,
+			Namespace:              "default",
+			K8sSecretName:          secretName,
+			KeyvaultSecretPairs:    params.KeyvaultSecretPairs,
+			KeyvaultName:           params.KeyvaultName,
+			KeyvaultTenantId:       params.KeyvaultTenantId,
+			UserAssignedIdentityID: params.UserAssignedIdentityID,
+		}
+		CreateSecretProvider(dclient, spParams)
+
+	} else if useKeyVault {
+		secretProviderName := fmt.Sprintf("serviceconnector-%s-secretprovider", processedConnName)
 
 		// create a secret provider
 		spParams := &SecretProviderParams{
@@ -52,11 +71,13 @@ func DeploySimple(useKeyVault bool, withTenant bool, params DeployParams) {
 		CreateSecret(client, sParams)
 	}
 
-	// create a config map
-	cmParams := &ConfigMapParams{
-		Name:           configMapName,
-		Namespace:      "default",
-		ConfigMapPairs: params.ConfigMapPairs,
+	if len(params.ConfigMapPairs) > 0 {
+		// create a config map
+		cmParams := &ConfigMapParams{
+			Name:           configMapName,
+			Namespace:      "default",
+			ConfigMapPairs: params.ConfigMapPairs,
+		}
+		CreateConfigMap(client, cmParams)
 	}
-	CreateConfigMap(client, cmParams)
 }

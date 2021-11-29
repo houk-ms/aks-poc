@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,14 +65,8 @@ func CreateSecretProvider(client dynamic.Interface, params *SecretProviderParams
 			"namespace": params.Namespace,
 		},
 		Spec: SecretProviderSpec{
-			Provider: "azure",
-			SecretObjects: []SecretObject{
-				{
-					SecretName: params.K8sSecretName,
-					Type:       "Opaque",
-					Data:       []SecretObjectData{},
-				},
-			},
+			Provider:      "azure",
+			SecretObjects: nil,
 			Parameters: SpecParameters{
 				UsePodIdentity:         "false",
 				UseVMManagedIdentity:   "true",
@@ -82,21 +78,30 @@ func CreateSecretProvider(client dynamic.Interface, params *SecretProviderParams
 		},
 	}
 
-	objectsValue := "array:\n"
-	for key, secret := range params.KeyvaultSecretPairs {
-		secretProvider.Spec.SecretObjects[0].Data = append(
-			secretProvider.Spec.SecretObjects[0].Data, SecretObjectData{
-				ObjectName: secret,
-				Key:        key,
-			})
+	if len(params.KeyvaultSecretPairs) > 0 {
+		secretProvider.Spec.SecretObjects = []SecretObject{
+			{
+				SecretName: params.K8sSecretName,
+				Type:       "Opaque",
+				Data:       []SecretObjectData{},
+			},
+		}
+		objectsValue := "array:\n"
+		for key, secret := range params.KeyvaultSecretPairs {
+			secretProvider.Spec.SecretObjects[0].Data = append(
+				secretProvider.Spec.SecretObjects[0].Data, SecretObjectData{
+					ObjectName: secret,
+					Key:        key,
+				})
 
-		objectsValue += fmt.Sprintf(
-			`  - |
+			objectsValue += fmt.Sprintf(
+				`  - |
     objectName: %s
     objectType: secret
 `, secret)
+		}
+		secretProvider.Spec.Parameters.Objects = objectsValue
 	}
-	secretProvider.Spec.Parameters.Objects = objectsValue
 
 	yamlData, err := yaml.Marshal(secretProvider)
 	if err != nil {
@@ -115,7 +120,7 @@ func CreateSecretProvider(client dynamic.Interface, params *SecretProviderParams
 		Kind:    "SecretProviderClass",
 	}
 	CreateCRDResource(client, gvrSecretProvider, gvkSecretProvider, params.Namespace, string(yamlData))
-	fmt.Printf("secretprovider/%s created\n", params.Name)
+	fmt.Printf("secretproviderclass/%s created\n", params.Name)
 }
 
 func UpdateSecretProvider(client dynamic.Interface, params *SecretProviderParams) {
@@ -125,7 +130,11 @@ func UpdateSecretProvider(client dynamic.Interface, params *SecretProviderParams
 		Resource: "secretproviderclasses",
 	}
 
-	utd, _ := client.Resource(gvrSecretProvider).Namespace(params.Namespace).Get(context.TODO(), "akv-secretprovider", metav1.GetOptions{})
+	reg, _ := regexp.Compile("[^a-zA-Z0-9]+")
+	processedKvName := strings.ToLower(reg.ReplaceAllString(params.KeyvaultName, ""))
+	exsitSecretProviderName := fmt.Sprintf("serviceconnector-%s-secretprovider", processedKvName)
+
+	utd, _ := client.Resource(gvrSecretProvider).Namespace(params.Namespace).Get(context.TODO(), exsitSecretProviderName, metav1.GetOptions{})
 	data, _ := utd.MarshalJSON()
 
 	var secretProvider SecretProviderClass
