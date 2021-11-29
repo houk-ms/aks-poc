@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 
 	"gopkg.in/yaml.v2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 )
@@ -113,4 +116,23 @@ func CreateSecretProvider(client dynamic.Interface, params *SecretProviderParams
 	}
 	CreateCRDResource(client, gvrSecretProvider, gvkSecretProvider, params.Namespace, string(yamlData))
 	fmt.Printf("secretprovider/%s created\n", params.Name)
+}
+
+func UpdateSecretProvider(client dynamic.Interface, params *SecretProviderParams) {
+	gvrSecretProvider := schema.GroupVersionResource{
+		Group:    "secrets-store.csi.x-k8s.io",
+		Version:  "v1alpha1",
+		Resource: "secretproviderclasses",
+	}
+
+	utd, _ := client.Resource(gvrSecretProvider).Namespace(params.Namespace).Get(context.TODO(), "akv-secretprovider", metav1.GetOptions{})
+	data, _ := utd.MarshalJSON()
+
+	var secretProvider SecretProviderClass
+	json.Unmarshal(data, &secretProvider)
+
+	params.KeyvaultTenantId = secretProvider.Spec.Parameters.TenantId
+	params.UserAssignedIdentityID = secretProvider.Spec.Parameters.UserAssignedIdentityID
+
+	CreateSecretProvider(client, params)
 }

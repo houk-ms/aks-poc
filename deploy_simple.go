@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func DeploySimple(useSecretProvider bool, params DeployParams) {
+func DeploySimple(useKeyVault bool, withTenant bool, params DeployParams) {
 	client := GetClient(params.KubeConfigPath)
 	dclient := GetDynamiClient(params.KubeConfigPath)
 
@@ -13,7 +13,7 @@ func DeploySimple(useSecretProvider bool, params DeployParams) {
 	podName := fmt.Sprintf("serviceconnector-%s-pod", strings.ToLower(params.ConnectionName))
 	configMapName := fmt.Sprintf("serviceconnector-%s-configmap", strings.ToLower(params.ConnectionName))
 
-	if useSecretProvider {
+	if useKeyVault {
 		secretProviderName := "serviceconnector-secretprovider"
 
 		// create a secret provider
@@ -26,7 +26,13 @@ func DeploySimple(useSecretProvider bool, params DeployParams) {
 			KeyvaultTenantId:       params.KeyvaultTenantId,
 			UserAssignedIdentityID: params.UserAssignedIdentityID,
 		}
-		CreateSecretProvider(dclient, spParams)
+
+		if withTenant {
+			CreateSecretProvider(dclient, spParams)
+		} else {
+			// get KeyvaultTenantId and UserAssignedIdentityID from existing secretProvider
+			UpdateSecretProvider(dclient, spParams)
+		}
 
 		// create a pod to mount secrets
 		pparams := &PodParams{

@@ -59,9 +59,13 @@ func main() {
 	}
 
 	useKeyVault := false
+	withTenant := true
 	if len(dParams.KeyvaultSecretPairs) > 0 {
 		useKeyVault = true
 	}
+	if dParams.KeyvaultTenantId == "" {
+		withTenant = false
+	}
 
-	DeploySimple(useKeyVault, dParams)
+	DeploySimple(useKeyVault, withTenant, dParams)
 }
